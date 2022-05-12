@@ -47,38 +47,28 @@ app.get('/write',function(request, response){
     response.render('write.ejs')
 });
 
-app.post('/add', function(request, response){
-    response.send('전송완료');
-    
-    db.collection('counter').findOne({name : '게시물개수'}, function(error, result){
-        console.log(result.totalPost);
-        let count = result.totalPost;
-
-        db.collection('post').insertOne({_id : count+1, title : request.body.title , content : request.body.content},
-            function(error, result){
-                db.collection('counter').updateOne({name : '게시물개수'},{$inc :{totalPost : 1}},function(error, result){
-                    if(error){
-                        return console.log(error);
-                    }
-                });
-            });
-    });
-});
-
 app.get('/list',function(request, response){
     db.collection('post').find().toArray(function(error, result){
         console.log(result);
         response.render('list.ejs', {posts : result});
     });
-
 });
 
-app.delete('/delete', function(request, response){
-    console.log(request.body);
-    request.body._id = parseInt(request.body._id);
-    db.collection('post').deleteOne( request.body, function(error, result){
-        console.log('삭제완료');
-        response.status(200).send({message : '성공했습니다.'});
+app.get('/search', function(request, response){
+    console.log(request.query.value);
+    let 검색조건 = [
+        {
+            $search: {
+                index: 'titleSearch',
+                text: {
+                    query: request.query.value,
+                    path: 'title'  // 제목날짜 둘다 찾고 싶으면 ['제목', '날짜']
+                }
+            }
+        }
+    ]; 
+    db.collection('post').aggregate(검색조건).toArray(function(error, result){
+        response.render('search.ejs', {posts : result})
     });
 });
 
@@ -108,6 +98,7 @@ app.put('/edit',function(request, response){
 const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
 const session = require('express-session');
+const req = require('express/lib/request');
 
 app.use(session({secret : '비밀코드', resave : true, saveUninitialized : false}));
 app.use(passport.initialize());
@@ -168,4 +159,64 @@ passport.deserializeUser(function(아이디, done){
     db.collection('login').findOne({id : 아이디}, function(error, result){
         done(null, result);
     });
+});
+
+app.post('/register', function(request, response){
+    db.collection('login').insertOne({id : request.body.id, pw : request.body.pw}, function(error, result){
+        response.redirect('/');
+    });
+});
+
+app.post('/add', function(request, response){
+    response.send('전송완료');
+    
+    db.collection('counter').findOne({name : '게시물개수'}, function(error, result){
+        console.log(result.totalPost);
+        let count = result.totalPost;
+        let insertData = {_id : count+1, title : request.body.title , content : request.body.content, writer : request.user._id};
+        db.collection('post').insertOne( insertData,
+            function(error, result){
+                db.collection('counter').updateOne({name : '게시물개수'},{$inc :{totalPost : 1}},function(error, result){
+                    if(error){
+                        return console.log(error);
+                    }
+                });
+            });
+    });
+});
+
+app.delete('/delete', function(request, response){
+    console.log(request.body);
+    request.body._id = parseInt(request.body._id);
+    let deleteData = { _id : request.body._id, writer : request.user._id};
+    db.collection('post').deleteOne( deleteData , function(error, result){
+        error ? console.log(error) : console.log('삭제완료');
+        response.status(200).send({message : '성공했습니다.'});
+    });
+});
+app.use('/shop', require('./routes/shop'));
+app.use('/board/sub', require('./routes/board'));
+
+const multer = require('multer');
+const storage =multer.diskStorage({
+    destination : function(req, file, cb){
+        cb(null, './public/image');
+    },
+    filename : function(req, file, cb){
+        cb(null, file.originalname);
+    }
+});
+
+const upload = multer({storage : storage});
+
+app.get('/upload', function(request, response){
+    response.render('upload.ejs');
+});
+
+app.post('/upload', upload.single('img') , function(request, response){
+    response.send('완료');
+});
+
+app.get('/image/:imageName', function(request, response){
+    response.sendFile(__dirname + '/public/image/' + request.params.imageName);
 });
